@@ -21,7 +21,7 @@ const GAME_MODES = {
 };
 
 let colors = ['#1abc9c', '#2ecc71', '#3498db', '#8c52ff', '#9b59b6'];
-const WINNING_SCORE = 2;
+const WINNING_SCORE = 1;
 
 // Ball object
 const Ball = {
@@ -169,7 +169,6 @@ const Game = {
     endGameMenu: function(text) {
         // Clear the canvas first to ensure message is visible
         this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        console.log('Game Over: ' + text);
         
         // Fill the background
         this.context.fillStyle = this.color;
@@ -459,7 +458,6 @@ const Game = {
     displayWinMessage: function(text) {
         // Set a flag to show we're displaying the win message
         this.showingWinMessage = true;
-        
         // Stop ball movement
         this.ball.moveX = DIRECTION.IDLE;
         this.ball.moveY = DIRECTION.IDLE;
