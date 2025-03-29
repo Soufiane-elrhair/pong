@@ -1,6 +1,7 @@
 const INITIAL_BALL_SPEED = 7;
 const SPEED_INCREMENT = 0.2;  // How much speed increases per hit
 const MAX_BALL_SPEED = 15;    // Maximum speed limit
+const MAX_NAME_LENGTH = 8;
 
 // Constants for direction
 const DIRECTION = {
@@ -144,6 +145,10 @@ const Game = {
         this.state = GAME_STATES.MENU;
         this.mode = GAME_MODES.SINGLE_PLAYER;
 
+        this.playerNames = ['Player 1', 'Player 2', 'Player 3', 'Player 4'];
+        this.getNameInput = false;
+        this.currentPlayerNaming = 0;
+
         // Create menu buttons
         this.buttons = [
             Button.new.call(this, 'Single Player', (this.canvas.height / 2) - 120, function() {
@@ -183,18 +188,115 @@ const Game = {
         this.loop();
     },
 
+    drawNameInput: function() {
+        this.context.fillStyle = 'rgba(0,0,0,0.7)';
+        this.context.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        this.context.fillStyle = '#ffffff';
+        this.context.font = '30px Courier New';
+        this.context.textAlign = 'center';
+        this.context.fillText(
+            `Enter name for ${this.playerNames[this.currentPlayerNaming]}:`,
+            this.canvas.width/2,
+            this.canvas.height/2 - 50
+        );
+        
+        // Show current input
+        this.context.fillText(
+            this.tempName || '',
+            this.canvas.width/2,
+            this.canvas.height/2 + 20
+        );
+        
+        this.context.font = '20px Courier New';
+        this.context.fillText(
+            'Press Enter when done',
+            this.canvas.width/2,
+            this.canvas.height/2 + 80
+        );
+    },
+
+    startTournament: function() {
+        // Change to initiate name input first
+        this.getNameInput = true;
+        this.currentPlayerNaming = 0;
+        this.tempName = '';
+        this.state = GAME_STATES.MENU; // Keep in menu until names are entered
+    },
+
     initTournament: function() {
+        this.showNameInputs();
         this.tournament = {
             currentRound: TOURNAMENT_STATE.ROUND_1,
             roundStartTime: Date.now(),
             betweenRounds: false,
-            roundWinners: [null, null], // Store winners of round 1 and 2
-            scores: [0, 0], // [Player 1/3 wins, Player 2/4 wins]
-            currentPlayers: ['Player 1', 'Player 2'] // Track displayed names
+            roundWinners: [null, null],
+            currentPlayers: [this.playerNames[0], this.playerNames[1]] // Use stored names
         };
         this.resetPaddles();
         this.player1.score = 0;
         this.player2.score = 0;
+    },
+
+    showNameInputs: function() {
+        this.getNameInput = true;
+        this.currentPlayerNaming = 0;
+        this.tempName = '';
+        this.playerNames = ['', '', '', '']; // Reset names
+        this.showNextNamePrompt();
+    },
+
+    startTournamentRounds: function() {
+        this.tournament = {
+            currentRound: TOURNAMENT_STATE.ROUND_1,
+            roundStartTime: Date.now(),
+            betweenRounds: false,
+            roundWinners: [null, null],
+            currentPlayers: [this.playerNames[0], this.playerNames[1]] // Use stored names
+        };
+        this.resetPaddles();
+        this.player1.score = 0;
+        this.player2.score = 0;
+        this.state = GAME_STATES.PLAYING;
+        this.running = true;
+    },
+
+    showNextNamePrompt: function() {
+        if (this.currentPlayerNaming >= 4) {
+            // All names collected, start tournament
+            this.getNameInput = false;
+            this.startTournamentRounds();
+            return;
+        }
+        
+        const defaultName = `Player ${this.currentPlayerNaming + 1}`;
+        const input = prompt(
+            `Enter name for Player ${this.currentPlayerNaming + 1} (max ${MAX_NAME_LENGTH} chars):`,
+            defaultName
+        );
+        
+        if (input === null) {
+            // User cancelled, use default names
+            for (let i = this.currentPlayerNaming; i < 4; i++) {
+                this.playerNames[i] = `Player ${i + 1}`;
+            }
+            this.getNameInput = false;
+            this.startTournamentRounds();
+            return;
+        }
+        
+        // Trim and limit name length
+        const trimmedName = input.trim().slice(0, MAX_NAME_LENGTH);
+        this.playerNames[this.currentPlayerNaming] = trimmedName || defaultName;
+        this.currentPlayerNaming++;
+        
+        // Show next prompt or start tournament
+        if (this.currentPlayerNaming < 4) {
+            setTimeout(this.showNextNamePrompt.bind(this), 100);
+        } else {
+            this.getNameInput = false;
+            this.startTournamentRounds();
+        }
     },
 
     startGame: function() {
@@ -296,24 +398,53 @@ const Game = {
     },
 
     startNextRound: function() {
-        if (this.tournament.currentRound === TOURNAMENT_STATE.ROUND_2) {
-            this.tournament.currentPlayers = ['Player 3', 'Player 4'];
+        if (!this.tournament.betweenRounds) return;
+        
+        // Check if 3 seconds have passed since round ended
+        if (Date.now() - this.tournament.roundStartTime >= 3000) {
+            this.tournament.betweenRounds = false;
+            this.tournament.currentRound++;
+            
+            // Set up players for next round
+            if (this.tournament.currentRound === TOURNAMENT_STATE.ROUND_2) {
+                this.tournament.currentPlayers = [this.playerNames[2], this.playerNames[3]];
+            } 
+            else if (this.tournament.currentRound === TOURNAMENT_STATE.ROUND_3) {
+                const round1Winner = this.tournament.roundWinners[0] === 1 ? 
+                    this.playerNames[0] : this.playerNames[1];
+                const round2Winner = this.tournament.roundWinners[1] === 2 ? 
+                    this.playerNames[3] : this.playerNames[2];
+                this.tournament.currentPlayers = [round1Winner, round2Winner];
+            }
+            
+            // Reset game state for new round
+            this.resetForNewRound();
+            this.running = true;
         }
-        else if (this.tournament.currentRound === TOURNAMENT_STATE.ROUND_3) {
-            // Set final round players based on previous winners
-            const round1Winner = this.tournament.roundWinners[0] === 1 ? 'Player 1' : 'Player 2';
-            const round2Winner = this.tournament.roundWinners[1] === 2 ? 'Player 4' : 'Player 3';
-            this.tournament.currentPlayers = [round1Winner, round2Winner];
-        }
+    },
+    
+    resetForNewRound: function() {
+        this.resetPaddles();
+        this._resetBall();
+        this.color = this._generateRoundColor();
         this.player1.score = 0;
         this.player2.score = 0;
-        this.ball = Ball.new.call(this, INITIAL_BALL_SPEED);
-        this.turn = this._getRandomPlayer();
-        this.timer = Date.now();
     },
 
     // Update all objects
     update: function() {
+        if (this.getNameInput) return;
+    
+        // Handle between-rounds delay
+        if (this.mode === GAME_MODES.TOURNAMENT && this.tournament.betweenRounds) {
+            this.startNextRound();
+            if (this.tournament.betweenRounds) return;
+        }
+
+        if (this.getNameInput || (this.mode === GAME_MODES.TOURNAMENT && this.tournament.betweenRounds)) {
+            return;
+        }
+
         if (this.state === GAME_STATES.MENU) return;
 
         if (this.mode === GAME_MODES.TOURNAMENT && this.tournament.betweenRounds) {
@@ -461,21 +592,23 @@ const Game = {
             this.ball.moveX = DIRECTION.LEFT;
         } else if (this.turn === this.player2) {
             this.ball.moveX = DIRECTION.RIGHT;
-        } else if (this.turn === this.player3) {
-            // For player 3, direction depends on ball position
+        } else if (this.turn === this.player3 && this.mode === GAME_MODES.MULTIPLAYER) {
+            // Only for 3-player mode
             this.ball.moveX = (this.ball.x < this.canvas.width / 2) ? DIRECTION.RIGHT : DIRECTION.LEFT;
+        } else {
+            // Default case (especially important for tournament mode)
+            this.ball.moveX = [DIRECTION.LEFT, DIRECTION.RIGHT][Math.floor(Math.random() * 2)];
         }
         
         // Randomize up/down direction
         this.ball.moveY = [DIRECTION.UP, DIRECTION.DOWN][Math.round(Math.random())];
         
-        // Randomize ball position
+        // Position the ball appropriately
         if (this.mode === GAME_MODES.MULTIPLAYER) {
-            // In multiplayer, keep the ball away from the edges on serve
             this.ball.y = Math.floor(Math.random() * (this.canvas.height - 300)) + 150;
             this.ball.x = Math.floor(Math.random() * (this.canvas.width - 300)) + 150;
         } else {
-            // In other modes, serve from center with random y
+            // For tournament and other modes
             this.ball.x = this.canvas.width / 2;
             this.ball.y = Math.floor(Math.random() * (this.canvas.height - 200)) + 100;
         }
@@ -523,23 +656,97 @@ const Game = {
         this.ball.color = `hsl(${speedRatio * 120}, 100%, 50%)`;
     },
     
+    getTournamentWinner: function() {
+        const round1Winner = this.tournament.roundWinners[0] === 1 ? 
+            this.playerNames[0] : this.playerNames[1];
+        const round2Winner = this.tournament.roundWinners[1] === 2 ? 
+            this.playerNames[3] : this.playerNames[2];
+        const finalWinnerNum = this.tournament.roundWinners[2];
+        
+        return finalWinnerNum === 1 ? round1Winner : round2Winner;
+    },
+
+    prepareNextRound: function() {
+        this.tournament.betweenRounds = true;
+        this.tournament.roundStartTime = Date.now();
+        this.tournament.currentRound++;
+        
+        // Reset game state for next round
+        this.resetPaddles();
+        this._resetBall();
+        this.running = false;
+        
+        // Set up players for next round
+        if (this.tournament.currentRound === TOURNAMENT_STATE.ROUND_2) {
+            this.tournament.currentPlayers = [this.playerNames[2], this.playerNames[3]];
+        } 
+        else if (this.tournament.currentRound === TOURNAMENT_STATE.ROUND_3) {
+            const round1Winner = this.tournament.roundWinners[0] === 1 ? 
+                this.playerNames[0] : this.playerNames[1];
+            const round2Winner = this.tournament.roundWinners[1] === 2 ? 
+                this.playerNames[3] : this.playerNames[2];
+            this.tournament.currentPlayers = [round1Winner, round2Winner];
+        }
+    },
+
+    prepareNextRoundPlayers: function() {
+        this.tournament.currentRound++;
+        
+        switch(this.tournament.currentRound) {
+            case TOURNAMENT_STATE.ROUND_2:
+                this.tournament.currentPlayers = [this.playerNames[2], this.playerNames[3]];
+                break;
+            case TOURNAMENT_STATE.ROUND_3:
+                const round1Winner = this.tournament.roundWinners[0] === 1 ? 
+                    this.playerNames[0] : this.playerNames[1];
+                const round2Winner = this.tournament.roundWinners[1] === 2 ? 
+                    this.playerNames[3] : this.playerNames[2];
+                this.tournament.currentPlayers = [round1Winner, round2Winner];
+                break;
+        }
+    },
+
+    getTournamentChampion: function() {
+        const round1Winner = this.tournament.roundWinners[0] === 1 ? 
+            this.playerNames[0] : this.playerNames[1];
+        const round2Winner = this.tournament.roundWinners[1] === 2 ? 
+            this.playerNames[3] : this.playerNames[2];
+        
+        return this.tournament.roundWinners[2] === 1 ? round1Winner : round2Winner;
+    },
+
+    resetForNewRound: function() {
+        this.player1.score = 0;
+        this.player2.score = 0;
+        this._resetBall();
+        this.color = this._generateRoundColor();
+        this.turn = this._getRandomPlayer();
+        this.timer = (new Date()).getTime();
+    },
+
     handleTournamentWin: function(winner) {
         const winnerNum = winner === this.player1 ? 1 : 2;
-        
-        // Store the round winner
         this.tournament.roundWinners[this.tournament.currentRound] = winnerNum;
-        this.tournament.scores[winnerNum - 1]++;
-        
+        this.tournament.roundWinner = winnerNum;
+    
+        // Store winner name
+        if (this.tournament.currentRound === TOURNAMENT_STATE.ROUND_1) {
+            this.tournament.round1WinnerName = winner === this.player1 ? 
+                this.playerNames[0] : this.playerNames[1];
+        } 
+        else if (this.tournament.currentRound === TOURNAMENT_STATE.ROUND_2) {
+            this.tournament.round2WinnerName = winner === this.player1 ? 
+                this.playerNames[2] : this.playerNames[3];
+        }
+    
         if (this.tournament.currentRound === TOURNAMENT_STATE.ROUND_3) {
-            // Tournament complete - determine final winner
-            const finalWinner = this.tournament.currentPlayers[winnerNum - 1];
-            this.gameOver(`Tournament Champion: ${finalWinner}`);
+            const champion = this.getTournamentChampion();
+            this.gameOver(`Tournament Champion: ${champion}`);
             this.tournament.currentRound = TOURNAMENT_STATE.COMPLETE;
         } else {
-            // Prepare next round
             this.tournament.betweenRounds = true;
             this.tournament.roundStartTime = Date.now();
-            this.tournament.currentRound++;
+            this.running = false;
         }
     },
 
@@ -579,9 +786,18 @@ const Game = {
 
     gameOver: function(message) {
         this.over = true;
+        this.running = false;
         this.state = GAME_STATES.GAME_OVER;
         this.winMessage = message;
         this.winMessageTime = (new Date()).getTime();
+        
+        // For tournament mode, ensure we clear between-rounds state
+        if (this.mode === GAME_MODES.TOURNAMENT) {
+            this.tournament.betweenRounds = false;
+        }
+        
+        // Force immediate redraw to show game over screen
+        this.draw();
     },
 
     displayWinMessage: function(text) {
@@ -596,6 +812,18 @@ const Game = {
         if (this.state === GAME_STATES.MENU) {
             this.drawMenu();
             return;
+        }
+        
+        // Clear the Canvas
+        this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    
+        // Set the fill style to black
+        this.context.fillStyle = this.color;
+    
+        // Draw the background
+        this.context.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    
+        // Draw speed indicator
         this.context.fillStyle = '#ffffff';
         this.context.font = '16px Courier New';
         this.context.fillText(
@@ -603,17 +831,7 @@ const Game = {
             50,
             50
         );
-        }
-
-        // Clear the Canvas
-        this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
-
-        // Set the fill style to black
-        this.context.fillStyle = this.color;
-
-        // Draw the background
-        this.context.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
+    
         if (this.mode === GAME_MODES.TOURNAMENT) {
             // Draw tournament info
             this.context.fillStyle = '#ffffff';
@@ -628,47 +846,71 @@ const Game = {
             ][this.tournament.currentRound];
             this.context.fillText(roundText, this.canvas.width/2, 40);
             
-            // Player display
+            // Player display using aliases
             let playerText;
             if (this.tournament.currentRound === TOURNAMENT_STATE.ROUND_3) {
-                // For final round, show round 1 winner vs round 2 winner
-                const leftPlayer = this.tournament.roundWinners[0] === 1 ? 'Player 1' : 'Player 2';
-                const rightPlayer = this.tournament.roundWinners[1] === 2 ? 'Player 4' : 'Player 3';
-                playerText = `${leftPlayer} | ${rightPlayer}`;
+                // For final round, show round 1 winner vs round 2 winner using stored names
+                const leftPlayer = this.tournament.roundWinners[0] === 1 ? 
+                    this.playerNames[0] : this.playerNames[1];
+                const rightPlayer = this.tournament.roundWinners[1] === 2 ? 
+                    this.playerNames[3] : this.playerNames[2];
+                playerText = `${leftPlayer} vs ${rightPlayer}`;
+            } else if (this.tournament.currentRound === TOURNAMENT_STATE.ROUND_2) {
+                playerText = `${this.playerNames[2]} vs ${this.playerNames[3]}`;
             } else {
-                // For rounds 1 and 2, show standard player names
-                playerText = `${this.tournament.currentPlayers[0]} | ${this.tournament.currentPlayers[1]}`;
+                playerText = `${this.playerNames[0]} vs ${this.playerNames[1]}`;
             }
             this.context.fillText(playerText, this.canvas.width/2, 80);
             
-            // Between rounds message
+            // Between rounds message using aliases
             if (this.tournament.betweenRounds) {
                 this.context.font = '30px Courier New';
                 let winnerText;
-                if (this.tournament.currentRound === TOURNAMENT_STATE.COMPLETE) {
-                    winnerText = "Tournament Complete!";
-                } else if (this.tournament.roundWinner) {
-                    winnerText = `${this.tournament.currentPlayers[this.tournament.roundWinner-1]} wins the round!`;
-                } else {
-                    winnerText = "Starting next round...";
+                
+                if (this.tournament.currentRound === TOURNAMENT_STATE.ROUND_1) {
+                    winnerText = `${this.tournament.round1WinnerName} wins Round 1!`;
+                } 
+                else if (this.tournament.currentRound === TOURNAMENT_STATE.ROUND_2) {
+                    winnerText = `${this.tournament.round2WinnerName} wins Round 2!`;
                 }
-                this.context.fillText(winnerText, this.canvas.width/2, this.canvas.height/2);
+                
+                this.context.fillText(
+                    winnerText || "Starting next round...",
+                    this.canvas.width/2, 
+                    this.canvas.height/2
+                );
+                
+                // Add countdown timer
+                const timeLeft = Math.ceil((3000 - (Date.now() - this.tournament.roundStartTime))/1000);
+                if (timeLeft > 0) {
+                    this.context.fillText(
+                        `Next round in ${timeLeft}...`,
+                        this.canvas.width/2,
+                        this.canvas.height/2 + 50
+                    );
+                }
             }
         }
-
-            // If game is over, show the end game screen
+    
+        // If game is over, show the end game screen
         if (this.state === GAME_STATES.GAME_OVER) {
+            // Clear everything first
+            this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            
+            // Draw the game over menu
             this.endGameMenu(this.winMessage);
+            
             // Add "Press ESC to continue" text
             this.context.font = '24px Courier New';
             this.context.fillStyle = '#ffffff';
+            this.context.textAlign = 'center';
             this.context.fillText(
-            'Press ESC to return to menu',
-            this.canvas.width / 2,
-            this.canvas.height / 2 + 100
-        );
+                'Press ESC to return to menu',
+                this.canvas.width / 2,
+                this.canvas.height / 2 + 100
+            );
             return;
-    }
+        }
 
         // Set the fill style to white (For the paddles and the ball)
         this.context.fillStyle = '#ffffff';
@@ -817,7 +1059,7 @@ const Game = {
         // Keep the loop going
         requestAnimationFrame(Pong.loop);
     },
-
+    
     // Listen for keyboard and mouse events
     listen: function() {
         // Track mouse position for button hover effects
@@ -851,6 +1093,32 @@ const Game = {
 
         // Handle keyboard events for player controls
         document.addEventListener('keydown', function(key) {
+
+            if (Pong.getNameInput) {
+                // Handle name input
+                if (e.key === 'Enter') {
+                    if (Pong.tempName) {
+                        Pong.playerNames[Pong.currentPlayerNaming] = Pong.tempName;
+                        Pong.currentPlayerNaming++;
+                        Pong.tempName = '';
+                        
+                        if (Pong.currentPlayerNaming >= 4) {
+                            Pong.getNameInput = false;
+                            Pong.startTournament();
+                        }
+                    }
+                } 
+                // Handle backspace
+                else if (e.key === 'Backspace') {
+                    Pong.tempName = Pong.tempName.slice(0, -1);
+                }
+                // Handle regular characters
+                else if (e.key.length === 1 && e.key.match(/[a-zA-Z0-9 ]/)) {
+                    Pong.tempName = (Pong.tempName || '') + e.key;
+                }
+                return;
+            }
+
             // Player 1 Controls (W, S)
             if (key.key === 'w' || key.key === 'W') Pong.player1.move = DIRECTION.UP;
             if (key.key === 's' || key.key === 'S') Pong.player1.move = DIRECTION.DOWN;
@@ -977,6 +1245,10 @@ const Game = {
     
     // Choose a random player to serve
     _getRandomPlayer: function() {
+        if (this.mode === GAME_MODES.TOURNAMENT) {
+            return this.turn === this.player1 ? this.player2 : this.player1;
+        }
+
         if (this.mode === GAME_MODES.MULTIPLAYER) {
             // In 3-player mode, randomly select one of the three players
             const players = [this.player1, this.player2, this.player3];
